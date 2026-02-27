@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waf-rules
+  namespace: ingress-gw
+data:
+  waf.conf: |
+    SecRuleEngine On
+    SecRule REQUEST_HEADERS:X-Bad-Header "@streq blocked" "id:1001,phase:1,deny,status:403,msg:'Blocked by WAF configmap rule'"

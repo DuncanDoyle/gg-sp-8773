@@ -1,0 +1,20 @@
+apiVersion: gateway.solo.io/v1
+kind: VirtualHostOption
+metadata:
+  name: waf-complex
+  namespace: ingress-gw
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: gw
+      namespace: ingress-gw
+  options:
+    waf:
+      configMapRuleSets:
+        - configMapRef:
+            name: waf-rules
+            namespace: ingress-gw
+      ruleSets:
+        - ruleStr: |
+            SecRule REQUEST_HEADERS:X-Inline-Block "@streq true" "id:3001,phase:1,deny,status:403,msg:'Blocked by inline WAF rule'"

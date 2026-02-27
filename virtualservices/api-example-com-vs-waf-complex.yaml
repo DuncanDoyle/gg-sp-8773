@@ -1,0 +1,28 @@
+apiVersion: gateway.solo.io/v1
+kind: VirtualService
+metadata:
+  name: api-example-com
+  namespace: gloo-system
+  labels:
+    app: httpbin
+spec:
+  virtualHost:
+    domains:
+    - 'api.example.com:81'
+    options:
+      waf:
+        configMapRuleSets:
+          - configMapRef:
+              name: waf-rules
+              namespace: ingress-gw
+        ruleSets:
+          - ruleStr: |
+              SecRule REQUEST_HEADERS:X-Inline-Block "@streq true" "id:3001,phase:1,deny,status:403,msg:'Blocked by inline WAF rule'"
+    routes:
+    - matchers:
+      - prefix: /
+      routeAction:
+        single:
+          upstream:
+            name: httpbin-httpbin-8000
+            namespace: gloo-system
