@@ -1,0 +1,27 @@
+apiVersion: gateway.solo.io/v1
+kind: VirtualHostOption
+metadata:
+  name: waf-crs
+  namespace: ingress-gw
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: gw
+      namespace: ingress-gw
+  options:
+    waf:
+      configMapRuleSets:
+        - configMapRef:
+            name: waf-rules
+            namespace: ingress-gw
+      coreRuleSet:
+        customSettingsString: |
+          SecRuleEngine On
+          SecRequestBodyAccess On
+          SecAction "id:900000,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=1"
+          SecAction "id:900110,phase:1,nolog,pass,t:none,setvar:tx.inbound_anomaly_score_threshold=100,setvar:tx.outbound_anomaly_score_threshold=100"
+          SecAction "id:900990,phase:1,nolog,pass,t:none,setvar:tx.crs_setup_version=310"
+      ruleSets:
+        - ruleStr: |
+            SecRule REQUEST_HEADERS:X-Inline-Block "@streq true" "id:3001,phase:1,deny,status:403,msg:'Blocked by inline WAF rule'"

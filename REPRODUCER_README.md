@@ -19,6 +19,7 @@ Both files share the same Kubernetes object name (`waf-rules`) so they can be sw
 |---|---|---|
 | `waf-virtualhostoption.yaml` | `VirtualHostOption` | `configMapRuleSets` only |
 | `waf-virtualhostoption-complex.yaml` | `VirtualHostOption` | `configMapRuleSets` + inline `ruleSets` (rule 3001: blocks `X-Inline-Block: true`) |
+| `waf-virtualhostoption-crs.yaml` | `VirtualHostOption` | `configMapRuleSets` + `coreRuleSet` (OWASP CRS, paranoia level 1, anomaly threshold 100) + inline `ruleSets` (rule 3001) |
 
 ### Scripts (run from the `install/` directory)
 
@@ -26,10 +27,12 @@ Both files share the same Kubernetes object name (`waf-rules`) so they can be sw
 |---|---|
 | `setup-waf-simple.sh` | Apply config-1 + simple VHO |
 | `setup-waf-complex.sh` | Apply config-1 + complex VHO |
+| `setup-waf-crs.sh` | Apply config-1 + CRS VHO |
 | `configure-waf-1.sh` | Switch to config-1 (1 rule) |
 | `configure-waf-2.sh` | Switch to config-2 (2 rules) |
 | `remove-waf-simple.sh` | Delete ConfigMaps + simple VHO |
 | `remove-waf-complex.sh` | Delete ConfigMaps + complex VHO |
+| `remove-waf-crs.sh` | Delete ConfigMaps + CRS VHO |
 
 ## Steps to Reproduce
 
@@ -109,6 +112,48 @@ curl -v -H "X-Inline-Block: true"   http://api.example.com/get  # 403 — inline
 
 ---
 
+### CRS scenario (`configMapRuleSets` + `coreRuleSet` + inline `ruleSets`)
+
+The OWASP CRS is loaded with paranoia level 1 and a high anomaly threshold (100) so that normal requests are not blocked by CRS rules. The configmap and inline rules continue to use explicit `deny` actions and are unaffected by the anomaly threshold.
+
+**1. Set up**
+
+```sh
+cd install && ./setup-waf-crs.sh
+```
+
+**2. Verify config-1 is active**
+
+```sh
+curl -v -H "X-Bad-Header: blocked" http://api.example.com/get  # 403 — blocked by rule 1001
+curl -v -H "X-Block-Me: true"      http://api.example.com/get  # 200 — rule 1002 not yet loaded
+curl -v -H "X-Inline-Block: true"  http://api.example.com/get  # 403 — blocked by inline rule 3001
+curl -v                            http://api.example.com/get  # 200 — CRS does not block normal requests
+```
+
+**3. Switch to config-2**
+
+```sh
+./configure-waf-2.sh
+```
+
+**4. Verify config-2 is active**
+
+```sh
+curl -v -H "X-Bad-Header: blocked" http://api.example.com/get  # 403 — blocked by rule 1001
+curl -v -H "X-Block-Me: true"      http://api.example.com/get  # 403 if reloaded; 200 if bug present
+curl -v -H "X-Inline-Block: true"  http://api.example.com/get  # 403 — inline rule always active
+curl -v                            http://api.example.com/get  # 200 — CRS does not block normal requests
+```
+
+**5. Clean up**
+
+```sh
+./remove-waf-crs.sh
+```
+
+---
+
 ## Findings
 
 **Gloo Gateway 1.20.6 — bug NOT reproduced in either configuration.**
@@ -120,6 +165,10 @@ Switching from config-1 to config-2 via `kubectl apply` was reflected immediatel
 ### Complex configuration (`configMapRuleSets` + inline `ruleSets`)
 
 Same result. Dynamic reload worked correctly when `configMapRuleSets` was combined with an inline `ruleSets` entry.
+
+### CRS configuration (`configMapRuleSets` + `coreRuleSet` + inline `ruleSets`)
+
+Same result. Dynamic reload worked correctly with the full combination of all three options, including the OWASP CRS.
 
 ### Why no fix was found
 
