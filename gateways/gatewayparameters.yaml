@@ -1,0 +1,13 @@
+apiVersion: gateway.gloo.solo.io/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: gatewayparameters
+  namespace: ingress-gw
+spec:
+  kube:
+    envoyContainer:
+      bootstrap:
+        logLevel: info
+        componentLogLevels:
+          filter: debug       # HTTP filters — where ModSecurity runs. This logs things like loading of the rules, execution of the rules, etc.
+          http: info          # HTTP connection manager

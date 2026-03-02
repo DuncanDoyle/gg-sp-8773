@@ -8,6 +8,7 @@ pushd ..
 kubectl apply -f gateways/gateway-proxy.yaml
 #K8S Gateway API
 kubectl create namespace ingress-gw --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f gateways/gatewayparameters.yaml
 kubectl apply -f gateways/gw.yaml
 
 # Create namespaces if they do not yet exist

@@ -178,3 +178,55 @@ A git log inspection confirms there was **no fix** in this area between 1.20.3 a
 - `gloo` v1.20.3→v1.20.7 (the dependency range bumped across those releases): only a Go version bump, a go.sum workaround, and an Envoy bump — nothing in the artifact client or ConfigMap watching code
 
 This suggests either the bug does not surface under our test conditions, or it is intermittent/environment-specific. Further investigation should focus on reproducing the customer's exact configuration more closely (e.g. their specific Kubernetes version or the precise combination of `configMapRuleSets` + `coreRuleSet` + `ruleSets` with the full OWASP CRS).
+
+---
+
+## Diagnostics
+
+### WAF blocking messages in gloo-proxy logs
+
+`filter: debug` is configured in `gateways/gatewayparameters.yaml` and applied to the `gw` Gateway via the `gateway.gloo.solo.io/gateway-parameters-name: gatewayparameters` annotation. This is applied as part of `setup.sh`, so WAF debug logging is **always active** in this reproducer — no manual setup required.
+
+To watch blocking events in real time:
+
+```sh
+kubectl logs -n ingress-gw deploy/gloo-proxy-gw -f
+```
+
+To temporarily toggle the level at runtime without redeploying (POST required, not GET):
+
+```sh
+kubectl port-forward -n ingress-gw deploy/gloo-proxy-gw 19000:19000 &
+curl -X POST "localhost:19000/logging?filter=info"    # quieten
+curl -X POST "localhost:19000/logging?filter=debug"   # re-enable
+curl -X POST localhost:19000/logging                  # list all loggers and current levels
+```
+
+### Confirm that ConfigMap rules were loaded in gloo-proxy
+
+When a ConfigMap is loaded or reloaded, the `filter` logger emits a `loaded string rule:` message for each rule set. This is the signal that Envoy actually picked up the new rules:
+
+```
+[debug][filter] [source/extensions/filters/http/modsecurity/config.cc:93] loaded string rule:
+SecRuleEngine On
+SecRule REQUEST_HEADERS:X-Bad-Header "@streq blocked" "id:1001,phase:1,deny,status:403,msg:'Blocked by WAF configmap rule'"
+SecRule REQUEST_HEADERS:X-Block-Me "@streq true" "id:1002,phase:1,deny,status:403,msg:'Blocked by WAF configmap rule 2'"
+```
+
+To watch for this in real time:
+
+```sh
+kubectl logs -n ingress-gw deploy/gloo-proxy-gw -f | grep "loaded string rule"
+```
+
+If the rules are not reloaded after `kubectl apply`, this line will not appear, confirming the bug.
+
+### Confirm the control plane detected a ConfigMap change
+
+Watch the gloo control plane for a new sync cycle triggered by a ConfigMap update:
+
+```sh
+kubectl logs -n gloo-system deploy/gloo -f | grep "begin sync"
+```
+
+Each line looks like: `begin sync {hash} (... N artifacts ...)`. A new line with a different hash after `kubectl apply` confirms the change was detected. No new line means the ConfigMap watcher did not fire.
